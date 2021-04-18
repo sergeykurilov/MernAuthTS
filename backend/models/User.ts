@@ -1,13 +1,14 @@
 import { model, Schema, Model, Document } from 'mongoose';
 const bcrypt = require("bcrypt")
+const jwt = require("jsonwebtoken")
+const crypto = require("crypto");
 
 interface IUser extends Document {
     username: string;
     email: string;
     password: string;
     resetPasswordToken: string;
-    resetPasswordExpire: Date;
-    comparePasswords(candidatePassword: string, next: (err: Error | null, same: boolean | null) => void): void;
+    resetPasswordExpire: number;
 }
 export const Regex = /(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@[*[a-zA-Z0-9-]+.[a-zA-Z0-9-.]+]*/
 
@@ -39,6 +40,20 @@ UserSchema.methods.matchPasswords = async function (password:string) {
     return await bcrypt.compare(password, this.password)
 }
 
+UserSchema.methods.getSignedToken = function() {
+    return jwt.sign({id: this._id}, process.env.JWT_SECRET, {
+        expiresIn: process.env.JWT_EXPIRE
+    })
+}
+
+UserSchema.methods.getResetPasswordToken = function() {
+    const resetToken = crypto.randomBytes(25).toString("hex")
+    this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest("hex")
+    this.resetPasswordExpire = Date.now() + 10 * (60 * 1000)
+
+    return resetToken
+}
+
 UserSchema.pre<IUser>("save", async function (next) {
     if(!this.isModified("password")){
         next()
@@ -47,6 +62,9 @@ UserSchema.pre<IUser>("save", async function (next) {
     this.password = await bcrypt.hash(this.password, salt)
     next()
 })
+
+
+
 
 const User: Model<IUser> = model("User", UserSchema)
 
